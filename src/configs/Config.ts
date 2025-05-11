@@ -2,6 +2,7 @@ import browser from "webextension-polyfill";
 import {run} from "~/utils/ScopeFunctions";
 import {EventListener} from "~/base/EventListener";
 import Constants from "~/utils/Constants";
+import {Key} from "react";
 
 let _currentConfig: Config | null = null
 
@@ -59,7 +60,7 @@ export const configKeys:ReadonlyArray<keyof Config>=Object.keys(defaultConfig) a
 
 export async function getConfigsFromStorageOrDefault(): Promise<Config> {
     const records = await browser.storage.local.get(
-        configKeys
+        [...configKeys]
     );
     return {
         ...defaultConfig,
