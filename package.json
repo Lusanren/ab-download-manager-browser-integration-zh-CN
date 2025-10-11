@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "classnames": "^2.5.1",
+    "hls-parser": "^0.15.0",
     "is-network-error": "^1.0.0",
     "lodash": "^4.17.21",
     "match-url-wildcard": "^0.0.5",

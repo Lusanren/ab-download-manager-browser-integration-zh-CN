@@ -127,5 +127,8 @@
   },
   "abdm_notification_download_captured_silently": {
     "message": "Download captured silently"
+  },
+  "download_media_title": {
+    "message": "Download With ABDM"
   }
 }

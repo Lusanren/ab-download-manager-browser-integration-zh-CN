@@ -23,7 +23,8 @@ export class Manifest3DownloadLinkInterceptor extends DownloadLinkInterceptor {
                 if (!response) {
                     return
                 }
-                if (!this.shouldHandleRequest(response)) {
+                const shouldHandleRequest = this.shouldHandleRequestForDirectDownload(response);
+                if (!shouldHandleRequest) {
                     return
                 }
                 // this.cancelledBrowserDownloads[response.requestId] = downloadItem
