@@ -1,12 +1,12 @@
 import browser from "webextension-polyfill";
-import {InterceptedMediaResult, InterceptedMediaType} from "~/linkgrabber/LinkGrabberResponse";
+import {InterceptedMediaResult} from "~/linkgrabber/LinkGrabberResponse";
 import {OnMediaInterceptedFromRequestListener} from "~/media/OnMediaInterceptedFromRequestListener";
 import {DownloadableMedia, MediaOnTab} from "~/media/MediaOnTab";
 import {sendMessage} from "webext-bridge/background";
 import * as HLSUtils from "~/media/HLSUtils"
 
 export class MediaRegistry implements OnMediaInterceptedFromRequestListener {
-    private readonly tabsMap: Record<number, MediaOnTab> = {}
+    private readonly tabsMap: Record<number, MediaOnTab | undefined> = {}
 
     constructor() {
         HLSUtils.parseHLSSilently()
@@ -30,14 +30,17 @@ export class MediaRegistry implements OnMediaInterceptedFromRequestListener {
 
     boot() {
         browser.tabs.onRemoved.addListener(
-            (tabId, removeInfo) => {
+            (tabId, _) => {
                 const page = this.tabsMap[tabId]
+                if (!page) {
+                    return
+                }
                 page.close()
                 delete this.tabsMap[tabId]
             }
         )
         browser.tabs.onUpdated.addListener(
-            (tabId, changeInfo, tab) => {
+            (tabId, changeInfo, _) => {
                 const mediaOnTab = this.tabsMap[tabId]
                 if (!mediaOnTab) {
                     return
