@@ -171,9 +171,9 @@ export abstract class DownloadLinkInterceptor {
         return true
     }
 
-    protected createDirectDownloadItemFromWebRequest(
+    protected async createDirectDownloadItemFromWebRequest(
         request: WebRequest.OnSendHeadersDetailsType,
-    ): DownloadRequestItem {
+    ): Promise<DownloadRequestItem> {
         let headers: Record<string, string> | null = null
         if (request?.requestHeaders) {
             headers = {}
@@ -183,13 +183,27 @@ export abstract class DownloadLinkInterceptor {
                 }
             })
         }
+        const documentUrl = await this.getDownloadPage(request)
         return {
             link: request.url,
             headers: headers,
-            downloadPage: request.originUrl ?? null,
+            downloadPage: documentUrl,
             description: null,
             type: "http",
             suggestedName: null,
+        }
+    }
+
+    private async getDownloadPage(request: WebRequest.OnSendHeadersDetailsType): Promise<string | null> {
+        let documentUrl = request.documentUrl
+        if (documentUrl) {
+            return documentUrl
+        }
+        try {
+            const tab = await browser.tabs.get(request.tabId)
+            return tab.url ?? null
+        } catch (error) {
+            return null
         }
     }
 
@@ -304,7 +318,7 @@ export abstract class DownloadLinkInterceptor {
                         return this.passResponse()
                     }
                     // direct download
-                    const downloadRequestItem = this.createDirectDownloadItemFromWebRequest(request)
+                    const downloadRequestItem = await this.createDirectDownloadItemFromWebRequest(request)
                     const requestAccepted = await this.requestAddDownload(downloadRequestItem);
                     if (requestAccepted) {
                         if (!this.canBlockResponse()) {
