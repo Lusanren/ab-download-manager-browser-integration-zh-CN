@@ -303,16 +303,14 @@ function createDownloadableMedia(
 ): DownloadableMedia | null {
     if (!mediaLinkToProcess.type) {
         // console.log("media doesn't have type", {mediaLinkToProcess})
-        console.log("no type", {mediaLinkToProcess})
         return null
     }
     if (mediaLinkToProcess.isEncrypted) {
         // console.log("media is encrypted", {mediaLinkToProcess})
-        console.log("encrypted", {mediaLinkToProcess})
         return null
     }
     if (!mediaLinkToProcess.fileExtension) {
-        console.log("no file extension", {mediaLinkToProcess})
+        // console.log("media has no file extension", {mediaLinkToProcess})
         return null
     }
 
