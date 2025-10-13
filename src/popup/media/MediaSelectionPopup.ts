@@ -85,6 +85,10 @@ function createPopup() {
         padding: 8px 12px;
         border-bottom: rgba(255,255,255,0.1) solid 1px;
         cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: start;
+        min-width: 160px;
       }
       .abdm-media-item:last-child {
         border-bottom: none;
