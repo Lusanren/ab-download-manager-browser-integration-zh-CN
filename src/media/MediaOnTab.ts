@@ -231,8 +231,12 @@ export class MediaOnTab {
         return this.currentMediaToProcess[link]?.isProcessed ?? false
     }
 
-    async getTabTitle() {
-        return (await browser.tabs.get(this.tabId)).title
+    async getTab() {
+        try {
+            return (await browser.tabs.get(this.tabId))
+        } catch (e) {
+            return null
+        }
     }
 
     private async onMediaProcessed(
@@ -245,18 +249,25 @@ export class MediaOnTab {
     }
 
     private async reloadList() {
-        const tabTitle = await this.getTabTitle()
-        if (!tabTitle) {
+        const tab = await this.getTab()
+        if (!tab) {
+            return
+        }
+        const tabTitle = tab.title
+        const tabUrl = tab.url
+        if (!tabTitle || !tabUrl) {
             return
             // tab title is not defined
         }
+
         const downloadableMediaList = _
             .entries(this.currentMediaToProcess)
             .map(([_, value]) => {
                 return createDownloadableMedia(
                     value,
                     {
-                        title: tabTitle
+                        pageTitle: tabTitle,
+                        pageUrlHash: shortSafeHash(tabUrl, 6),
                     });
             })
             .filter(i => i != null)
@@ -298,7 +309,8 @@ function createSizeString(size: number): string {
 function createDownloadableMedia(
     mediaLinkToProcess: MediaLinkToProcess,
     pageInfo: {
-        title: string
+        pageTitle: string
+        pageUrlHash: string
     },
 ): DownloadableMedia | null {
     if (!mediaLinkToProcess.type) {
@@ -315,9 +327,15 @@ function createDownloadableMedia(
     }
 
     const mediaProps = []
-
-    const name = mediaLinkToProcess.name ?? pageInfo.title;
-    mediaProps.push(name)
+    let name: string
+    if (mediaLinkToProcess.name) {
+        name = mediaLinkToProcess.name
+        mediaProps.push(name)
+    } else {
+        name = pageInfo.pageTitle
+        mediaProps.push(pageInfo.pageTitle)
+        mediaProps.push(pageInfo.pageUrlHash)
+    }
 
     let resolutionString: string | undefined
     if (mediaLinkToProcess.resolution) {
@@ -439,4 +457,24 @@ function resolveVariantUrl(
     } catch (e) {
         return new Request(variantUrl)
     }
+}
+
+/**
+ * Generates a short unique string based on a URL.
+ * This helps when a user downloads multiple videos from the same website,
+ * as the default file names might be identical. The generated string
+ * serves as a postfix to differentiate the files.
+ */
+function shortSafeHash(url: string, length = 6): string {
+    let hash = 0;
+    for (let i = 0; i < url.length; i++) {
+        // mix character codes with a prime to reduce collisions
+        hash = (hash * 31 + url.charCodeAt(i)) >>> 0;
+    }
+    let str = '';
+    for (let i = 0; i < length; i++) {
+        str = String.fromCharCode(97 + (hash % 26)) + str;
+        hash = Math.floor(hash / 26);
+    }
+    return str;
 }
