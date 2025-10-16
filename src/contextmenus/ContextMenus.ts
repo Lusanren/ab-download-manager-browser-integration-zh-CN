@@ -46,6 +46,8 @@ function createOnCLickHandlers() {
                     description: description,
                     downloadPage: downloadPage,
                     headers: headers,
+                    suggestedName: null,
+                    type: "http",
                 }
                 await addDownload([downloadRequest])
                 // backgroundReceiveMessage(addDownloadCommand([downloadRequest]))

@@ -20,7 +20,9 @@ export function getLinksFromSelection(selection:Selection): Array<DownloadReques
                     link: linkNode.href,
                     headers: null,
                     description: linkNode.innerText,
-                    downloadPage: downloadPage
+                    downloadPage: downloadPage,
+                    suggestedName: null,
+                    type: "http"
                 })
             }
         }

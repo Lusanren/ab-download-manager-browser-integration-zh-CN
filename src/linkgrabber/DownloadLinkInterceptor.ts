@@ -1,23 +1,25 @@
-import {getLatestConfig} from "~/configs/Config";
-import {isNullOrBlank} from "~/utils/StringUtils";
 import * as Configs from "~/configs/Config";
+import {getLatestConfig} from "~/configs/Config";
 import {inRange} from "~/utils/NumberUtils";
 import {DownloadRequestItem} from "~/interfaces/DownloadRequestItem";
 import {addDownload} from "~/background/actions";
 import {run} from "~/utils/ScopeFunctions";
-import browser from "webextension-polyfill";
 import type {WebRequest} from "webextension-polyfill";
-import {getFileNameFromHeader} from "~/utils/ExtractFileNameFromHeader";
+import browser from "webextension-polyfill";
 import {isChrome} from "~/utils/ExtensionInfo";
 import urlMatch from "match-url-wildcard"
+import {InterceptedMediaResult,} from "~/linkgrabber/LinkGrabberResponse";
 
-// import OnHeadersReceivedOptions = WebRequest.OnHeadersReceivedOptions;
+import {OnMediaInterceptedFromRequestListener} from "~/media/OnMediaInterceptedFromRequestListener";
+import {MEDIA_BLACKLIST_URLS} from "~/media/MediaBlackList";
+import {getContentType} from "~/utils/HeaderUtils";
+import {getFileExtension, getFileFromHeaders, getFileFromUrl} from "~/utils/URLUtils";
 
 
 export abstract class DownloadLinkInterceptor {
     protected readonly pendingRequests: Record<string, WebRequest.OnSendHeadersDetailsType | undefined> = {}
     protected readonly responses: Record<string, WebRequest.OnHeadersReceivedDetailsType> = {}
-
+    private onMediaDetectedListener: OnMediaInterceptedFromRequestListener | null = null
 
     protected setPendingRequest(id: string, requestHeaders: WebRequest.OnSendHeadersDetailsType) {
         this.pendingRequests[id] = requestHeaders
@@ -39,54 +41,58 @@ export abstract class DownloadLinkInterceptor {
 
     //utils
 
-    protected isBlacklist(details: WebRequest.OnHeadersReceivedDetailsType) {
+    protected isBlacklist(url: string) {
         const blackList = Configs.getLatestConfig().blacklistedUrls
         if (blackList.length == 0) {
             return false
         }
-        const requestedUrl = details.originUrl || details.url
-        return urlMatch(requestedUrl, blackList)
+        return urlMatch(url, blackList)
     }
 
-    protected isWebPageComponents(details: WebRequest.OnHeadersReceivedDetailsType) {
-        const contentType = details.responseHeaders?.find((header) => {
-            return header.name.toLowerCase() === "content-type"
-        })?.value
+    protected isWebPageComponents(responseHeaders: Headers) {
+        const contentType = getContentType(responseHeaders)
         if (contentType?.toLowerCase().startsWith("text/")) {
             return true
         }
         return false
     }
 
-    protected getFileExtension(name: string): string {
-        return name
-            .split(".")
-            .pop() ?? name
+    protected isHLSRequest(
+        url: string,
+        requestHeaders: Headers,
+        responseHeaders: Headers,
+    ): InterceptedMediaResult | false {
+        // we only receive requests that have m3u8 so it should be fine
+        return {
+            type: "media",
+            mediaType: "hls",
+            url: url,
+            requestHeaders: requestHeaders,
+            responseHeaders: responseHeaders,
+        }
     }
 
-    protected getFileFromUrl(url: string): string | null {
-        return new URL(url).pathname.split("/").pop() ?? null
-    }
-
-    protected getFileFromHeaders(responseHeaders: WebRequest.HttpHeaders | undefined) {
-        if (!responseHeaders) return null
-        const foundValues = responseHeaders.filter((header) => {
-            return header.name.toLowerCase() == "content-disposition" && !isNullOrBlank(header.value)
-        }).map((value) => {
-            return value.value as string
-        })
-        if (foundValues.length == 0) {
-            return null
+    protected isDirectMedia(
+        url: string,
+        requestHeaders: Headers,
+        responseHeaders: Headers,
+    ): InterceptedMediaResult | false {
+        const type = getContentType(responseHeaders)
+        if (!type) {
+            return false
         }
-        const extractedNames = foundValues.map((value) => {
-            return getFileNameFromHeader(value)
-        }).filter((value) => {
-            return value !== null
-        }) as string[]
-        if (extractedNames.length == 0) {
-            return null
+        for (const hlsType of ["video", "audio"]) {
+            if (type.startsWith(hlsType)) {
+                return {
+                    type: "media",
+                    mediaType: "http",
+                    url: url,
+                    requestHeaders: requestHeaders,
+                    responseHeaders: responseHeaders,
+                }
+            }
         }
-        return extractedNames[0]
+        return false
     }
 
     protected isInRegisteredFileFormats(fileExtension: string) {
@@ -97,8 +103,11 @@ export abstract class DownloadLinkInterceptor {
         return true
     }
 
-    protected shouldHandleRequest(details: WebRequest.OnHeadersReceivedDetailsType) {
-        if (!(details.type === "main_frame" || details.type === "sub_frame")) {
+    protected shouldHandleRequestForDirectDownload(details: WebRequest.OnHeadersReceivedDetailsType): string | false {
+        if (!(
+            details.type === "main_frame"
+            || details.type === "sub_frame"
+        )) {
             // console.log("capture_error","frame type is not captured",details.type)
             return false
         }
@@ -115,30 +124,44 @@ export abstract class DownloadLinkInterceptor {
             // console.log("capture_error","not success",details.statusCode)
             return false
         }
-        if (this.isWebPageComponents(details)) {
+        const responseHeaders = getHeaders(details.responseHeaders)
+        if (this.isWebPageComponents(responseHeaders)) {
             // console.log("capture_error","is Web component")
             return false
         }
-        if (this.isBlacklist(details)) {
+        if (this.isBlacklist(details.originUrl || details.url)) {
             return false
         }
-        let fileName = this.getFileFromHeaders(details.responseHeaders)
+
+        return this.isDirectDownloadContent(details, responseHeaders)
+    }
+
+    private isDirectDownloadContent(
+        details: WebRequest.OnHeadersReceivedDetailsType,
+        responseHeaders: Headers,
+    ): string | false {
+        if (!(
+            details.type === "main_frame"
+            || details.type === "sub_frame"
+        )) {
+            return false
+        }
+        let fileName = getFileFromHeaders(responseHeaders)
         if (fileName === null) {
-            fileName = this.getFileFromUrl(details.url)
+            fileName = getFileFromUrl(details.url)
         }
         if (fileName == null) {
             // console.log("capture_error","filename isNull")
             return false
         }
-        const ext = this.getFileExtension(fileName)
+        const ext = getFileExtension(fileName)
         if (!this.isInRegisteredFileFormats(ext)) {
             // console.log("capture_error",`extension is not registered`,ext)
             return false
         }
-        return {
-            fileName: fileName
-        }
+        return fileName
     }
+
 
     protected async requestAddDownload(item: DownloadRequestItem) {
         const result = await addDownload([item])
@@ -148,9 +171,9 @@ export abstract class DownloadLinkInterceptor {
         return true
     }
 
-    protected createItemFromWebRequest(
+    protected async createDirectDownloadItemFromWebRequest(
         request: WebRequest.OnSendHeadersDetailsType,
-    ): DownloadRequestItem {
+    ): Promise<DownloadRequestItem> {
         let headers: Record<string, string> | null = null
         if (request?.requestHeaders) {
             headers = {}
@@ -160,11 +183,27 @@ export abstract class DownloadLinkInterceptor {
                 }
             })
         }
+        const documentUrl = await this.getDownloadPage(request)
         return {
             link: request.url,
             headers: headers,
-            downloadPage: request.originUrl ?? null,
-            description: null
+            downloadPage: documentUrl,
+            description: null,
+            type: "http",
+            suggestedName: null,
+        }
+    }
+
+    private async getDownloadPage(request: WebRequest.OnSendHeadersDetailsType): Promise<string | null> {
+        let documentUrl = request.documentUrl
+        if (documentUrl) {
+            return documentUrl
+        }
+        try {
+            const tab = await browser.tabs.get(request.tabId)
+            return tab.url ?? null
+        } catch (error) {
+            return null
         }
     }
 
@@ -195,12 +234,12 @@ export abstract class DownloadLinkInterceptor {
                 this.addItemToNewTabs(tab.id, tab.url)
             }
         })
-        browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        browser.tabs.onUpdated.addListener((tabId, changeInfo, _) => {
             if (changeInfo.url) {
                 this.removeItemInNewTabs(tabId)
             }
         })
-        browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
+        browser.tabs.onRemoved.addListener((tabId, _) => {
             this.removeItemInNewTabs(tabId)
         })
         browser.webRequest.onSendHeaders.addListener(
@@ -225,6 +264,42 @@ export abstract class DownloadLinkInterceptor {
         )
         browser.webRequest.onCompleted.addListener(
             (details) => {
+                const request = this.pendingRequests[details.requestId]
+                if (!request) {
+                    return
+                }
+                this.checkForDirectMedia(details, request)
+            },
+            {
+                types: ["media"],
+                urls: ["*://*/*"],
+            },
+            [
+                "responseHeaders"
+            ],
+        )
+        browser.webRequest.onCompleted.addListener(
+            (details) => {
+                const request = this.pendingRequests[details.requestId]
+                if (!request) {
+                    return
+                }
+                this.checkForHLS(details, request)
+            }, {
+                types: ["xmlhttprequest"],
+                urls: [
+                    "http://*/*.m3u8",
+                    "https://*/*.m3u8",
+                    "http://*/*.m3u8?*",
+                    "https://*/*.m3u8?*",
+                ],
+            },
+            [
+                "responseHeaders"
+            ]
+        )
+        browser.webRequest.onCompleted.addListener(
+            (details) => {
                 this.removePendingRequest(details.requestId)
             },
             filter
@@ -233,7 +308,7 @@ export abstract class DownloadLinkInterceptor {
             async (details) => {
                 let shouldRemoveResponseInFinallyImmediately: boolean = true
                 try {
-                    const result = this.shouldHandleRequest(details);
+                    const result = this.shouldHandleRequestForDirectDownload(details);
                     this.responses[details.requestId] = details
                     if (result === false) {
                         return this.passResponse()
@@ -242,7 +317,8 @@ export abstract class DownloadLinkInterceptor {
                     if (request === undefined) {
                         return this.passResponse()
                     }
-                    const downloadRequestItem = this.createItemFromWebRequest(request)
+                    // direct download
+                    const downloadRequestItem = await this.createDirectDownloadItemFromWebRequest(request)
                     const requestAccepted = await this.requestAddDownload(downloadRequestItem);
                     if (requestAccepted) {
                         if (!this.canBlockResponse()) {
@@ -289,6 +365,12 @@ export abstract class DownloadLinkInterceptor {
         )
     }
 
+    onMediaDetected(tabId: number, mediaResult: InterceptedMediaResult) {
+        this.onMediaDetectedListener?.onMediaDetected(
+            tabId, mediaResult,
+        )
+    }
+
     async onDownloadSendToAppSuccess(request: WebRequest.OnSendHeadersDetailsType) {
         await this.closeIfItWasNewTab(request)
     }
@@ -302,4 +384,75 @@ export abstract class DownloadLinkInterceptor {
     abstract cancelResponse(): any
 
     abstract canBlockResponse(): boolean
+
+    setOnMediaDetectedListener(
+        onMediaDetectedListener: OnMediaInterceptedFromRequestListener | null
+    ) {
+        this.onMediaDetectedListener = onMediaDetectedListener
+    }
+
+    private checkForHLS(details: WebRequest.OnCompletedDetailsType, request: WebRequest.OnSendHeadersDetailsType) {
+        if (!this.shouldProcessMedia(details)) {
+            return
+        }
+        const isHLS = this.isHLSRequest(
+            details.url,
+            getHeaders(request.requestHeaders),
+            getHeaders(details.responseHeaders),
+        );
+        if (isHLS) {
+            this.onMediaDetected(
+                details.tabId,
+                isHLS,
+            )
+        }
+    }
+
+    private shouldProcessMedia(details: WebRequest.OnCompletedDetailsType) {
+        if (!Configs.getLatestConfig().popupEnabled) {
+            return false
+        }
+        if (this.isBlacklist(details.originUrl || details.url)) {
+            return false
+        }
+        if (this.isMediaBlackList(details.originUrl || details.url)) {
+            return false
+        }
+        return true
+    }
+
+    private checkForDirectMedia(details: WebRequest.OnCompletedDetailsType, request: WebRequest.OnSendHeadersDetailsType) {
+        if (!this.shouldProcessMedia(details)) {
+            return
+        }
+        const isMedia = this.isDirectMedia(
+            details.url,
+            getHeaders(request.requestHeaders),
+            getHeaders(details.responseHeaders),
+        );
+        if (isMedia) {
+            this.onMediaDetected(
+                details.tabId,
+                isMedia,
+            )
+        }
+    }
+
+    private isMediaBlackList(url: string) {
+        const blackList = MEDIA_BLACKLIST_URLS
+        if (blackList.length == 0) {
+            return false
+        }
+        return urlMatch(url, blackList)
+    }
+}
+
+function getHeaders(responseHeaders?: browser.WebRequest.HttpHeaders): Headers {
+    const headers = new Headers()
+    responseHeaders?.forEach((header) => {
+        if (header.value) {
+            headers.set(header.name, header.value)
+        }
+    })
+    return headers
 }
