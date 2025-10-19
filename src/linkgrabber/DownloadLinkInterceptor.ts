@@ -4,7 +4,7 @@ import {inRange} from "~/utils/NumberUtils";
 import {DownloadRequestItem} from "~/interfaces/DownloadRequestItem";
 import {addDownload} from "~/background/actions";
 import {run} from "~/utils/ScopeFunctions";
-import type {WebRequest} from "webextension-polyfill";
+import type {Tabs, WebRequest} from "webextension-polyfill";
 import browser from "webextension-polyfill";
 import {isChrome} from "~/utils/ExtensionInfo";
 import urlMatch from "match-url-wildcard"
@@ -15,11 +15,16 @@ import {MEDIA_BLACKLIST_URLS} from "~/media/MediaBlackList";
 import {getContentType} from "~/utils/HeaderUtils";
 import {getFileExtension, getFileFromHeaders, getFileFromUrl} from "~/utils/URLUtils";
 
+type TabInfo = {
+    title?: string,
+    url?: string,
+}
 
 export abstract class DownloadLinkInterceptor {
     protected readonly pendingRequests: Record<string, WebRequest.OnSendHeadersDetailsType | undefined> = {}
     protected readonly responses: Record<string, WebRequest.OnHeadersReceivedDetailsType> = {}
     private onMediaDetectedListener: OnMediaInterceptedFromRequestListener | null = null
+    private tabCache: Record<number, TabInfo> = {}
 
     protected setPendingRequest(id: string, requestHeaders: WebRequest.OnSendHeadersDetailsType) {
         this.pendingRequests[id] = requestHeaders
@@ -132,6 +137,10 @@ export abstract class DownloadLinkInterceptor {
         if (this.isBlacklist(details.originUrl || details.url)) {
             return false
         }
+        const downloadPage = this.getDownloadPage(details)
+        if (downloadPage && this.isBlacklist(downloadPage)) {
+            return false
+        }
 
         return this.isDirectDownloadContent(details, responseHeaders)
     }
@@ -171,9 +180,9 @@ export abstract class DownloadLinkInterceptor {
         return true
     }
 
-    protected async createDirectDownloadItemFromWebRequest(
+    protected createDirectDownloadItemFromWebRequest(
         request: WebRequest.OnSendHeadersDetailsType,
-    ): Promise<DownloadRequestItem> {
+    ): DownloadRequestItem {
         let headers: Record<string, string> | null = null
         if (request?.requestHeaders) {
             headers = {}
@@ -183,7 +192,7 @@ export abstract class DownloadLinkInterceptor {
                 }
             })
         }
-        const documentUrl = await this.getDownloadPage(request)
+        const documentUrl = this.getDownloadPage(request)
         return {
             link: request.url,
             headers: headers,
@@ -194,13 +203,13 @@ export abstract class DownloadLinkInterceptor {
         }
     }
 
-    private async getDownloadPage(request: WebRequest.OnSendHeadersDetailsType): Promise<string | null> {
+    private getDownloadPage(request: WebRequest.OnSendHeadersDetailsType): string | null {
         let documentUrl = request.documentUrl
         if (documentUrl) {
             return documentUrl
         }
         try {
-            const tab = await browser.tabs.get(request.tabId)
+            const tab = this.tabCache[request.tabId]
             return tab.url ?? null
         } catch (error) {
             return null
@@ -233,14 +242,17 @@ export abstract class DownloadLinkInterceptor {
             if (tab.id && tab.url) {
                 this.addItemToNewTabs(tab.id, tab.url)
             }
+            this.updateTabCache(tab)
         })
-        browser.tabs.onUpdated.addListener((tabId, changeInfo, _) => {
+        browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             if (changeInfo.url) {
                 this.removeItemInNewTabs(tabId)
             }
+            this.updateTabCache(tab)
         })
         browser.tabs.onRemoved.addListener((tabId, _) => {
             this.removeItemInNewTabs(tabId)
+            delete this.tabCache[tabId]
         })
         browser.webRequest.onSendHeaders.addListener(
             (details) => {
@@ -318,7 +330,7 @@ export abstract class DownloadLinkInterceptor {
                         return this.passResponse()
                     }
                     // direct download
-                    const downloadRequestItem = await this.createDirectDownloadItemFromWebRequest(request)
+                    const downloadRequestItem = this.createDirectDownloadItemFromWebRequest(request)
                     const requestAccepted = await this.requestAddDownload(downloadRequestItem);
                     if (requestAccepted) {
                         if (!this.canBlockResponse()) {
@@ -412,11 +424,21 @@ export abstract class DownloadLinkInterceptor {
         if (!Configs.getLatestConfig().popupEnabled) {
             return false
         }
-        if (this.isBlacklist(details.originUrl || details.url)) {
+        const resourceUrl = details.originUrl || details.url;
+        if (this.isBlacklist(resourceUrl)) {
             return false
         }
-        if (this.isMediaBlackList(details.originUrl || details.url)) {
+        if (this.isMediaBlackList(resourceUrl)) {
             return false
+        }
+        const downloadPage = this.getDownloadPage(details)
+        if (downloadPage) {
+            if (this.isBlacklist(downloadPage)) {
+                return false
+            }
+            if (this.isMediaBlackList(downloadPage)) {
+                return false
+            }
         }
         return true
     }
@@ -444,6 +466,17 @@ export abstract class DownloadLinkInterceptor {
             return false
         }
         return urlMatch(url, blackList)
+    }
+
+    private updateTabCache(tab: Tabs.Tab) {
+        if (!tab.id) return
+        let tabInfo = this.tabCache[tab.id]
+        if (!tabInfo) {
+            tabInfo = {}
+            this.tabCache[tab.id] = tabInfo
+        }
+        tabInfo.url = tab.url
+        tabInfo.title = tab.title
     }
 }
 
