@@ -46,7 +46,7 @@ function createUi(position: PositionInPage, onAction: () => void, onCancel: () =
     const styleEl = document.createElement("style");
     styleEl.textContent = `
     .abdm {
-        font-size: 1rem;
+        font-size: 16px;
         color: #aaaaaa;
         background: linear-gradient(to bottom right, #2E3038, #171820);
         display: flex;

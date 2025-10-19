@@ -43,7 +43,7 @@ function createPopup() {
         box-shadow: rgba(0,0,0,0.07) 0px 1px 2px, rgba(0,0,0,0.07) 0px 2px 4px, rgba(0,0,0,0.07) 0px 4px 8px;
         cursor: pointer;
         color: #aaaaaa;
-        font-size: 1rem;
+        font-size: 16px;
       }
       .abdm-media-header .appIcon,
       .abdm-media-header .title-wrapper,
@@ -76,7 +76,7 @@ function createPopup() {
         border-radius: 16px;
         overflow: auto;
         color: #ccc;
-        font-size: 0.9rem;
+        font-size: 14px;
         box-shadow: rgba(0,0,0,0.15) 0px 4px 10px;
         margin-top: 4px;
         display: none; /* start hidden */
@@ -102,7 +102,7 @@ function createPopup() {
         color: #fff;
       }
       .abdm-item-details {
-        font-size: 0.8rem;
+        font-size: 12px;
         opacity: 0.7;
       }
     `
