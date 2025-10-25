@@ -1,6 +1,6 @@
 {
   "name": "ab-download-manager-browser-integration",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "displayName": "AB Download Manager Browser Integration",
   "author": "AmirHossein Abdolmotallebi",
   "description": "Download files with AB Download Manager app",
