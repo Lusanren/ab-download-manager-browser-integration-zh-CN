@@ -46,7 +46,7 @@ export abstract class DownloadLinkInterceptor {
 
     //utils
 
-    protected isBlacklist(url: string) {
+    protected isInConfigBlacklist(url: string) {
         const blackList = Configs.getLatestConfig().blacklistedUrls
         if (blackList.length == 0) {
             return false
@@ -134,11 +134,11 @@ export abstract class DownloadLinkInterceptor {
             // console.log("capture_error","is Web component")
             return false
         }
-        if (this.isBlacklist(details.originUrl || details.url)) {
+        if (this.isInConfigBlacklist(details.originUrl || details.url)) {
             return false
         }
         const downloadPage = this.getDownloadPage(details)
-        if (downloadPage && this.isBlacklist(downloadPage)) {
+        if (downloadPage && this.isInConfigBlacklist(downloadPage)) {
             return false
         }
 
@@ -425,18 +425,18 @@ export abstract class DownloadLinkInterceptor {
             return false
         }
         const resourceUrl = details.originUrl || details.url;
-        if (this.isBlacklist(resourceUrl)) {
+        if (this.isInConfigBlacklist(resourceUrl)) {
             return false
         }
-        if (this.isMediaBlackList(resourceUrl)) {
+        if (this.isInMediaBlackList(resourceUrl)) {
             return false
         }
         const downloadPage = this.getDownloadPage(details)
         if (downloadPage) {
-            if (this.isBlacklist(downloadPage)) {
+            if (this.isInConfigBlacklist(downloadPage)) {
                 return false
             }
-            if (this.isMediaBlackList(downloadPage)) {
+            if (this.isInMediaBlackList(downloadPage)) {
                 return false
             }
         }
@@ -460,7 +460,7 @@ export abstract class DownloadLinkInterceptor {
         }
     }
 
-    private isMediaBlackList(url: string) {
+    private isInMediaBlackList(url: string) {
         const blackList = MEDIA_BLACKLIST_URLS
         if (blackList.length == 0) {
             return false
