@@ -41,10 +41,12 @@ function createUi(position: PositionInPage, onAction: () => void, onCancel: () =
     // Create shadow root
     const shadowRoot = el.attachShadow({ mode: "open" });
     const downloadSelectedText = browser.i18n.getMessage("selection_popup_download_selected");
-    const popupString = `
-<style>
+    
+    // Create style element using textContent to avoid CSP violation
+    const styleEl = document.createElement("style");
+    styleEl.textContent = `
     .abdm {
-        font-size: 1rem;    
+        font-size: 16px;
         color: #aaaaaa;
         background: linear-gradient(to bottom right, #2E3038, #171820);
         display: flex;
@@ -93,7 +95,11 @@ function createUi(position: PositionInPage, onAction: () => void, onCancel: () =
     .abdm .close-btn:hover {
         background: rgba(255, 255, 255, 25%);
     }
-</style>
+    `;
+    shadowRoot.appendChild(styleEl);
+
+    // Create HTML content without inline style
+    const popupString = `
 <div dir="ltr" class="abdm">
     <div class="download-btn">
         <div class="appIcon">
@@ -106,7 +112,7 @@ function createUi(position: PositionInPage, onAction: () => void, onCancel: () =
                         <stop offset="1" stop-color="#4DC4FE"/>
                     </linearGradient>
                 </defs>
-            </svg>       
+            </svg>
         </div>
         <span>${downloadSelectedText}</span>
     </div>
@@ -119,7 +125,9 @@ function createUi(position: PositionInPage, onAction: () => void, onCancel: () =
     `;
 
     // Append the popup content to the shadow root
-    shadowRoot.innerHTML = popupString;
+    const container = document.createElement("div");
+    container.innerHTML = popupString;
+    shadowRoot.appendChild(container.firstElementChild!);
 
     el.classList.add(AB_DM_POPUP_CLASSNAME);
 

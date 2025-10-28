@@ -1,5 +1,5 @@
 export const MEDIA_BLACKLIST_URLS: string[] = [
-    "*://*.googlevideo.com/*",
-    "*://youtu.be/*",
-    "*://*.youtube.com/*",
+    "youtu.be",
+    "*.youtube.com",
+    "youtube.com",
 ]
